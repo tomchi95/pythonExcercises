@@ -1,0 +1,123 @@
+"""
+Projekt zaliczeniowy - Automatyczna analiza logow
+Autor: Tomasz Jaronski
+
+"""
+
+
+import json
+import datetime
+
+
+def generuj_raport(sciezka_do_pliku):
+
+    # Otwórz plik wejściowy i przeczytaj zawartość
+    with open(sciezka_do_pliku, "r") as file:
+        logs = file.readlines()
+
+    # Inicjalizacja zmiennych
+    valid_logs = []
+    invalid_logs = []
+    temperatures = []
+    max_temp = None
+    min_temp = None
+    average_temp = None
+    total_temp = 0
+    overheating_time = 0
+    overheating_periods = 0
+    overheating_start = None
+    overheating_end = None
+
+    # Przepisz poprawne logi do valid_logs i niepoprawne do invalid_logs
+    for line in logs:
+        try:
+            date, time, temp = line.split(" ")
+            try:
+                datetime.datetime.strptime(line[:16], "%Y-%m-%d %H:%M")
+                temp = temp.strip()[:-1]
+                if (temp.isnumeric() or isinstance(float(temp), float)):
+                    if float(temp) > 0:
+                        temp = float(temp)
+                        valid_logs.append(line)
+                        temperatures.append(temp)
+                        if max_temp is None or float(temp) > max_temp:
+                            max_temp = float(temp)
+                        if min_temp is None or float(temp) < min_temp:
+                            min_temp = float(temp)
+                        total_temp += float(temp)
+                        if float(temp) > 100:
+                            if overheating_start is None:
+                                overheating_periods += 1
+                                overheating_start = line
+                            overheating_end = line
+                        else:
+                            overheating_start = None
+                    else:
+                        invalid_logs.append(line.strip())
+                else:
+                    invalid_logs.append(line.strip())
+            except ValueError:
+                invalid_logs.append(line.strip())
+        except ValueError:
+            invalid_logs.append(line.strip())
+
+    if overheating_start is not None and overheating_end is not None:
+        overheating_time = (datetime.datetime.strptime(overheating_end.split(" ")[1], "%H:%M")
+                            - datetime.datetime.strptime(overheating_start.split(" ")[1], "%H:%M")).seconds // 60
+
+    # Obliczanie czasu trwania raportu na podstawie poprawnych logów
+    if len(valid_logs) > 1:
+        start_time = datetime.datetime.strptime(
+            valid_logs[0][:16], "%Y-%m-%d %H:%M")
+        end_time = datetime.datetime.strptime(
+            valid_logs[-1][:16], "%Y-%m-%d %H:%M")
+        report_duration = int((end_time - start_time).total_seconds() / 60)
+    else:
+        report_duration = 0
+
+    # Oblicz procent błędnych logów
+    if len(logs) > 0:
+        error_percentage = (len(invalid_logs) / len(logs)) * 100
+    else:
+        error_percentage = 100.0
+
+    # Oblicz średnią temperaturę
+    if len(temperatures) > 0:
+        average_temp = total_temp / len(temperatures)
+    else:
+        average_temp = 0
+
+    # Sprawdź, czy występują problemy z silnikiem
+    high_emf = bool(False)
+    overheating_problems = bool(False)
+
+    if error_percentage > 10:
+        high_emf = True
+    if overheating_time > 10:
+        overheating_problems = True
+
+    # Zapisz wyniki do słownika
+    results = {
+        "wadliwe_logi": invalid_logs,
+        "procent_wadliwych_logow": f"{error_percentage:.1f}",
+        "czas_trwania_raportu": report_duration,
+        "temperatura": {
+            "max": f"{max_temp:.1f}" if max_temp is not None else None,
+            "min": f"{min_temp:.1f}" if min_temp is not None else None,
+            "srednia": f"{average_temp:.1f}" if average_temp != 0 else None
+        },
+        "najdluzszy_czas_przegrzania": overheating_time,
+        "liczba_okresow_przegrzania": overheating_periods,
+        "problemy": {
+            "wysoki poziom zaklocen EM": high_emf,
+            "wysokie_ryzyko_uszkodzenia_silnika_z_powodu_temperatury": overheating_problems,
+        }
+    }
+
+    return(json.dumps(results, indent=2))
+
+
+"""
+gen = generuj_raport("input3.txt")
+print(gen)
+"""
